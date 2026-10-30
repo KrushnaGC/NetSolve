@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetSolve - Network Troubleshooting Toolkit</title>
+<style>
+  :root { --bg:#f4f6fb; --card:#fff; --ink:#1b2430; --accent:#0b5cad; --muted:#5b6675; --line:#d8dee9; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Arial, Helvetica, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--accent); color:#fff; padding:18px 24px; }
+  header h1 { margin:0; font-size:22px; }
+  header p { margin:4px 0 0; font-size:13px; opacity:.9; }
+  nav { display:flex; gap:6px; padding:12px 24px 0; flex-wrap:wrap; }
+  nav button { border:1px solid var(--line); background:#e8edf5; padding:9px 16px; border-radius:6px 6px 0 0; cursor:pointer; font-size:14px; }
+  nav button.active { background:var(--card); border-bottom-color:var(--card); font-weight:bold; color:var(--accent); }
+  main { margin:0 24px 24px; background:var(--card); border:1px solid var(--line); padding:20px; border-radius:0 6px 6px 6px; }
+  section { display:none; } section.active { display:block; }
+  label { display:block; font-size:13px; margin:10px 0 4px; color:var(--muted); }
+  input, select, textarea { width:100%; padding:9px; border:1px solid var(--line); border-radius:5px; font-size:14px; }
+  .row { display:grid; grid-template-columns: 2fr 1fr auto; gap:10px; align-items:end; }
+  button.primary { background:var(--accent); color:#fff; border:0; padding:10px 18px; border-radius:5px; cursor:pointer; font-size:14px; }
+  button.danger { background:#b3261e; color:#fff; border:0; padding:5px 10px; border-radius:4px; cursor:pointer; }
+  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:14px; }
+  th, td { border:1px solid var(--line); padding:8px; text-align:left; vertical-align:top; }
+  th { background:#eef2f8; width:34%; }
+  .err { color:#b3261e; margin-top:10px; font-size:14px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .chk { display:flex; gap:8px; align-items:center; margin:6px 0; font-size:14px; }
+  .chk input { width:auto; }
+  .result { border-left:4px solid var(--accent); background:#f1f6fd; padding:10px 14px; margin:10px 0; border-radius:4px; font-size:14px; }
+  .tag { display:inline-block; font-size:12px; background:#dfe9f7; padding:2px 8px; border-radius:10px; margin-right:6px; }
+  mono, code { font-family: "Courier New", monospace; }
+  @media (max-width:700px){ .row, .grid2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>NetSolve - Network Troubleshooting Toolkit</h1>
+  <p>IPv4 Subnet Calculator | Rule-Based Diagnosis Assistant | Case Tracker</p>
+</header>
+
+<nav id="tabs">
+  <button class="active" data-tab="subnet">Subnet Calculator</button>
+  <button data-tab="assistant">Diagnosis Assistant</button>
+  <button data-tab="cases">Case Tracker</button>
+</nav>
+
+<main>
+  <!-- TAB 1: SUBNET CALCULATOR -->
+  <section id="subnet" class="active">
+    <div class="row">
+      <div><label for="ip">IPv4 address</label><input id="ip" value="192.168.10.25" placeholder="e.g. 192.168.10.25"></div>
+      <div><label for="cidr">CIDR prefix (0-32)</label><input id="cidr" type="number" min="0" max="32" value="26"></div>
+      <div><button class="primary" id="calcBtn">Calculate</button></div>
+    </div>
+    <div id="subnetErr" class="err"></div>
+    <table id="subnetOut"></table>
+  </section>
+
+  <!-- TAB 2: DIAGNOSIS ASSISTANT -->
+  <section id="assistant">
+    <p>Select the symptoms you observe. The assistant matches them against a rule base and ranks the most probable causes.</p>
+    <div id="symptoms" class="grid2"></div>
+    <p><button class="primary" id="diagBtn">Diagnose</button></p>
+    <div id="diagOut"></div>
+  </section>
+
+  <!-- TAB 3: CASE TRACKER -->
+  <section id="cases">
+    <div class="grid2">
+      <div><label for="cTitle">Case title</label><input id="cTitle" placeholder="e.g. PC cannot obtain IP address"></div>
+      <div><label for="cCat">Category</label>
+        <select id="cCat"><option>Connectivity</option><option>DHCP / DNS</option><option>Routing</option><option>Security</option><option>Performance</option><option>Other</option></select></div>
+      <div><label for="cSev">Severity</label>
+        <select id="cSev"><option>Low</option><option>Medium</option><option>High</option></select></div>
+      <div><label for="cStat">Status</label>
+        <select id="cStat"><option>Open</option><option>In progress</option><option>Resolved</option></select></div>
+    </div>
+    <label for="cNotes">Notes / resolution</label><textarea id="cNotes" rows="3"></textarea>
+    <p><button class="primary" id="addCase">Add case</button>
+       <button class="primary" id="exportCases">Export JSON</button></p>
+    <label for="filter">Filter by status</label>
+    <select id="filter"><option value="">All</option><option>Open</option><option>In progress</option><option>Resolved</option></select>
+    <div id="caseErr" class="err"></div>
+    <table id="caseTable"></table>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ---------- Tab handling ---------- */
+document.querySelectorAll("#tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#tabs button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("main section").forEach(s => s.classList.remove("active"));
+    btn.classList.add("active");
+    $(btn.dataset.tab).classList.add("active");
+  });
+});
+
+/* ---------- Subnet calculator ---------- */
+function ipToInt(s) {
+  const parts = s.trim().split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    if (!/^\d{1,3}$/.test(p) || Number(p) > 255) return null;
+    n = n * 256 + Number(p);
+  }
+  return n >>> 0;
+}
+function intToIp(n) {
+  return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+}
+function maskFromCidr(c) { return c === 0 ? 0 : (0xFFFFFFFF << (32 - c)) >>> 0; }
+function toBinary(n) {
+  return n.toString(2).padStart(32, "0").match(/.{8}/g).join(".");
+}
+function ipClass(n) {
+  const f = n >>> 24;
+  if (f < 128) return "A"; if (f < 192) return "B"; if (f < 224) return "C";
+  return f < 240 ? "D (multicast)" : "E (reserved)";
+}
+function isPrivate(n) {
+  return (n >>> 24) === 10 ||
+         (n >>> 20) === 0xAC1 ||          /* 172.16.0.0/12 */
+         (n >>> 16) === 0xC0A8;           /* 192.168.0.0/16 */
+}
+function calcSubnet() {
+  const err = $("subnetErr"), out = $("subnetOut");
+  err.textContent = ""; out.innerHTML = "";
+  const ip = ipToInt($("ip").value);
+  const c = Number($("cidr").value);
+  if (ip === null) { err.textContent = "Invalid IPv4 address. Use four numbers from 0 to 255."; return; }
+  if (!Number.isInteger(c) || c < 0 || c > 32) { err.textContent = "CIDR prefix must be an integer from 0 to 32."; return; }
+  const mask = maskFromCidr(c);
+  const net = (ip & mask) >>> 0;
+  const wild = (~mask) >>> 0;
+  const bc = (net | wild) >>> 0;
+  const total = Math.pow(2, 32 - c);
+  let usable, first, last;
+  if (c === 32) { usable = 1; first = last = ip; }
+  else if (c === 31) { usable = 2; first = net; last = bc; }
+  else { usable = total - 2; first = net + 1; last = bc - 1; }
+  const rows = [
+    ["Network address", intToIp(net) + "/" + c],
+    ["Subnet mask", intToIp(mask)],
+    ["Wildcard mask", intToIp(wild)],
+    ["Broadcast address", intToIp(bc)],
+    ["First usable host", intToIp(first >>> 0)],
+    ["Last usable host", intToIp(last >>> 0)],
+    ["Total addresses", total.toLocaleString()],
+    ["Usable hosts", usable.toLocaleString()],
+    ["Address class", ipClass(ip)],
+    ["Address type", isPrivate(ip) ? "Private (RFC 1918)" : "Public / other"],
+    ["Subnet mask (binary)", toBinary(mask)]
+  ];
+  out.innerHTML = rows.map(r => "<tr><th>" + r[0] + "</th><td>" + r[1] + "</td></tr>").join("");
+}
+$("calcBtn").addEventListener("click", calcSubnet);
+
+/* ---------- Rule-based diagnosis assistant ---------- */
+const SYMPTOMS = {
+  nolink: "Link light is off / interface shows down",
+  apipa: "Host has a 169.254.x.x address",
+  nogw: "Host cannot ping its default gateway",
+  nodns: "Can ping 8.8.8.8 but websites do not open by name",
+  slow: "Network is very slow",
+  some: "Only some destinations are unreachable",
+  drops: "Connection drops intermittently",
+  conflict: "IP address conflict warning appears"
+};
+const RULES = [
+  { need:["nolink"], layer:"Layer 1 - Physical", cause:"Faulty cable, loose connector, dead switch port or disabled NIC.",
+    fix:"Re-seat or replace the cable, try another port, check that the interface is enabled (no shutdown)." },
+  { need:["apipa"], layer:"Layer 3 - Network (DHCP)", cause:"Host could not reach a DHCP server, or the DHCP scope is exhausted.",
+    fix:"Run ipconfig /renew, verify the DHCP server and scope, check the VLAN of the access port." },
+  { need:["nogw"], layer:"Layer 2/3", cause:"Wrong subnet mask or gateway, VLAN mismatch, or gateway interface down.",
+    fix:"Verify IP, mask and gateway with ipconfig; compare against the gateway subnet; check VLAN assignment." },
+  { need:["nodns"], layer:"Layer 7 - Application (DNS)", cause:"DNS server unreachable or wrong DNS address configured.",
+    fix:"Check DNS settings, test with nslookup, try an alternate DNS server." },
+  { need:["slow","drops"], layer:"Layer 1/2", cause:"Duplex mismatch, congestion, or a switching loop.",
+    fix:"Check interface errors and duplex settings, review utilisation, verify spanning tree." },
+  { need:["some"], layer:"Layer 3/4", cause:"Missing route, access control list or firewall rule blocking traffic.",
+    fix:"Use traceroute to find where packets stop; inspect routing table and ACLs." },
+  { need:["conflict"], layer:"Layer 3 - Network", cause:"Two devices share the same static IP address.",
+    fix:"Locate the duplicate with arp -a, move static addresses outside the DHCP range." },
+  { need:["drops","nolink"], layer:"Layer 1 - Physical", cause:"Loose or damaged cable causing intermittent link loss.",
+    fix:"Replace the patch cable and test with a cable tester." },
+  { need:["slow"], layer:"Layer 4 - Transport", cause:"Bandwidth saturation or heavy background traffic.",
+    fix:"Measure utilisation, identify top talkers, apply QoS if required." }
+];
+$("symptoms").innerHTML = Object.keys(SYMPTOMS).map(k =>
+  '<label class="chk"><input type="checkbox" value="' + k + '"> ' + SYMPTOMS[k] + "</label>").join("");
+
+function diagnose() {
+  const chosen = [...document.querySelectorAll("#symptoms input:checked")].map(i => i.value);
+  const out = $("diagOut");
+  if (chosen.length === 0) { out.innerHTML = '<p class="err">Select at least one symptom.</p>'; return; }
+  const scored = RULES.map(r => {
+    const hit = r.need.filter(n => chosen.includes(n)).length;
+    return { r, score: hit / r.need.length, hit };
+  }).filter(x => x.hit > 0).sort((a, b) => b.score - a.score || b.r.need.length - a.r.need.length);
+  if (scored.length === 0) { out.innerHTML = "<p>No matching rule found.</p>"; return; }
+  out.innerHTML = scored.map(x =>
+    '<div class="result"><span class="tag">' + x.r.layer + '</span><span class="tag">Match ' +
+    Math.round(x.score * 100) + '%</span><br><b>Probable cause:</b> ' + x.r.cause +
+    '<br><b>Suggested fix:</b> ' + x.r.fix + "</div>").join("");
+}
+$("diagBtn").addEventListener("click", diagnose);
+
+/* ---------- Case tracker (localStorage) ---------- */
+const KEY = "netsolve_cases";
+function loadCases() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; }
+}
+function saveCases(list) {
+  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) { $("caseErr").textContent = "Storage unavailable."; }
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
+}
+function renderCases() {
+  const f = $("filter").value;
+  const list = loadCases().filter(c => !f || c.status === f);
+  const head = "<tr><th>Title</th><th>Category</th><th>Severity</th><th>Status</th><th>Notes</th><th></th></tr>";
+  $("caseTable").innerHTML = head + (list.length ? list.map(c =>
+    "<tr><td>" + esc(c.title) + "</td><td>" + esc(c.cat) + "</td><td>" + esc(c.sev) + "</td><td>" +
+    esc(c.status) + "</td><td>" + esc(c.notes) + '</td><td><button class="danger" data-id="' + c.id + '">Delete</button></td></tr>'
+  ).join("") : '<tr><td colspan="6">No cases recorded.</td></tr>');
+}
+$("addCase").addEventListener("click", () => {
+  const title = $("cTitle").value.trim();
+  $("caseErr").textContent = "";
+  if (!title) { $("caseErr").textContent = "Case title is required."; return; }
+  const list = loadCases();
+  list.push({ id: Date.now(), title, cat: $("cCat").value, sev: $("cSev").value,
+              status: $("cStat").value, notes: $("cNotes").value.trim() });
+  saveCases(list);
+  $("cTitle").value = ""; $("cNotes").value = "";
+  renderCases();
+});
+$("caseTable").addEventListener("click", e => {
+  const id = e.target.dataset && e.target.dataset.id;
+  if (!id) return;
+  saveCases(loadCases().filter(c => String(c.id) !== id));
+  renderCases();
+});
+$("filter").addEventListener("change", renderCases);
+$("exportCases").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(loadCases(), null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "netsolve_cases.json"; a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+calcSubnet();
+renderCases();
+</script>
+</body>
+</html>
